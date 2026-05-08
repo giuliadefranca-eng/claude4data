@@ -1,0 +1,1013 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lead → MQL Conversion & DQ Analysis Dashboard v1</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1117;
+    --card: #1a1d27;
+    --border: #2a2d3a;
+    --text: #e4e4e7;
+    --muted: #9ca3af;
+    --accent: #6366f1;
+    --green: #22c55e;
+    --red: #ef4444;
+    --amber: #f59e0b;
+    --blue: #3b82f6;
+    --purple: #a855f7;
+    --pink: #ec4899;
+    --cyan: #06b6d4;
+    --teal: #14b8a6;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 24px; max-width: 1600px; margin: 0 auto; }
+
+  .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; flex-wrap: wrap; gap: 12px; }
+  .header h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
+  .header h1 span { color: var(--accent); }
+  .header .subtitle { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .badge { display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+  .badge-red { background: rgba(239,68,68,0.15); color: var(--red); }
+  .badge-green { background: rgba(34,197,94,0.15); color: var(--green); }
+  .badge-amber { background: rgba(245,158,11,0.15); color: var(--amber); }
+  .badge-blue { background: rgba(59,130,246,0.15); color: var(--blue); }
+  .badge-purple { background: rgba(168,85,247,0.15); color: var(--purple); }
+
+  .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .kpi { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .kpi .label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .kpi .value { font-size: 32px; font-weight: 700; }
+  .kpi .delta { font-size: 12px; margin-top: 4px; }
+  .kpi .delta.up { color: var(--green); }
+  .kpi .delta.down { color: var(--red); }
+  .kpi .delta.neutral { color: var(--muted); }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+  @media (max-width: 1100px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .card.full { grid-column: 1 / -1; }
+  .card h3 { font-size: 15px; font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+  .card h3 .icon { font-size: 18px; }
+  .card .note { font-size: 11px; color: var(--muted); margin-top: 12px; line-height: 1.5; }
+
+  .chart-container { position: relative; height: 320px; }
+  .chart-container-sm { position: relative; height: 240px; }
+  .chart-container-lg { position: relative; height: 400px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  th.right, td.right { text-align: right; }
+  td { padding: 10px 12px; border-bottom: 1px solid rgba(42,45,58,0.5); }
+  tr:hover td { background: rgba(99,102,241,0.04); }
+
+  .bar-cell { display: flex; align-items: center; gap: 8px; }
+  .bar-bg { flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; min-width: 60px; }
+  .bar-fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
+
+  .section-title { font-size: 18px; font-weight: 700; margin: 32px 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+
+  .callout { border-radius: 10px; padding: 16px 20px; margin-bottom: 24px; }
+  .callout.red { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2); }
+  .callout.amber { background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2); }
+  .callout.blue { background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.2); }
+  .callout h4 { font-size: 14px; margin-bottom: 6px; }
+  .callout p { color: var(--muted); font-size: 13px; line-height: 1.6; }
+  .callout .stat { color: var(--text); font-weight: 600; }
+
+  .scrollable { max-height: 440px; overflow-y: auto; }
+  .scrollable::-webkit-scrollbar { width: 6px; }
+  .scrollable::-webkit-scrollbar-track { background: var(--card); }
+  .scrollable::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .footer { text-align: center; margin-top: 40px; padding: 20px; color: var(--muted); font-size: 12px; }
+  .footer a { color: var(--accent); text-decoration: none; }
+
+  .mono { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>Lead → MQL <span>Conversion & DQ Dashboard</span></h1>
+    <div class="subtitle">Why leads aren't converting to MQLs — by campaign, DQ reason, ICP, and channel &middot; Data: mart_sales_funnel_metrics_uncohorted_attributed &middot; Marketing w-shaped attribution</div>
+  </div>
+  <div style="display:flex; gap:8px; align-items:center;">
+    <span class="badge badge-purple">v1</span>
+    <span class="badge badge-blue">May 8, 2026</span>
+    <span class="badge badge-amber">FY26 Q3 → FY27 Q1</span>
+  </div>
+</div>
+
+<!-- KPI ROW -->
+<div class="kpi-row">
+  <div class="kpi">
+    <div class="label">Marketing-Sourced CVR (FY27 Q1)</div>
+    <div class="value" style="color:var(--amber)">9.2%</div>
+    <div class="delta down">↓ from 17.0% avg in FY26 H1</div>
+  </div>
+  <div class="kpi">
+    <div class="label">Blended CVR (FY27 Q1)</div>
+    <div class="value" style="color:var(--red)">4.1%</div>
+    <div class="delta down">Diluted by 76K outbound/unattrib leads</div>
+  </div>
+  <div class="kpi">
+    <div class="label">MQLs Auto-Closed (TTM)</div>
+    <div class="value" style="color:var(--red)">5,123</div>
+    <div class="delta down">Demo: 3,003 · Trial: 1,689 · Nurture: 431</div>
+  </div>
+  <div class="kpi">
+    <div class="label">Est. Lost S2 Pipeline</div>
+    <div class="value" style="color:var(--red)">$7.2M</div>
+    <div class="delta down">~232 qualified opps never created</div>
+  </div>
+  <div class="kpi">
+    <div class="label">Content Synd Avg DQ Rate</div>
+    <div class="value" style="color:var(--amber)">63%</div>
+    <div class="delta down">Infuse + TechAdvice campaigns</div>
+  </div>
+</div>
+
+<!-- KEY INSIGHT CALLOUT -->
+<div class="callout red">
+  <h4 style="color:var(--red)">The FY27 Q1 "CVR Collapse" Is Mostly a Composition Story</h4>
+  <p>
+    Blended lead-to-MQL CVR dropped from <span class="stat">~12%</span> to <span class="stat">2.8%</span> in Feb 2026 — alarming at first glance.
+    But after excluding outbound Sales leads (0.2% CVR), event invite-only leads (0% CVR), and customer leads, marketing-sourced CVR dropped from
+    <span class="stat">~18%</span> to <span class="stat">~9%</span> — a real decline, but not catastrophic. <span class="stat">76K non-marketing leads</span> flooded the denominator in Q1 alone.
+    Paid, Direct, and Organic channels remain stable at <span class="stat">11–16% CVR</span>. The remaining "Other" channel is the gap.
+  </p>
+</div>
+
+<!-- SECTION 1: CVR TREND -->
+<div class="section-title">1. Monthly CVR Trend — Blended vs Marketing-Sourced</div>
+<div class="grid-2">
+  <div class="card">
+    <h3><span class="icon">📈</span> Conversion Rate Trend</h3>
+    <div class="chart-container">
+      <canvas id="cvrTrendChart"></canvas>
+    </div>
+    <div class="note">Marketing-sourced = excl. outbound Sales, event invites, customer leads</div>
+  </div>
+  <div class="card">
+    <h3><span class="icon">📊</span> Lead Volume — All vs Marketing-Sourced</h3>
+    <div class="chart-container">
+      <canvas id="volumeChart"></canvas>
+    </div>
+    <div class="note">Grey area = excluded non-marketing leads (outbound, event invites, customers)</div>
+  </div>
+</div>
+
+<!-- SECTION 2: DQ REASONS -->
+<div class="section-title">2. Non-Conversion Reasons — Why Leads Don't MQL</div>
+<div class="grid-2">
+  <div class="card">
+    <h3><span class="icon">🚫</span> DQ Reason Breakdown (Feb 2025 – May 2026)</h3>
+    <div class="chart-container-lg">
+      <canvas id="dqReasonChart"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <h3><span class="icon">🔍</span> Pre-MQL vs Post-MQL Close Reasons</h3>
+    <table>
+      <thead>
+        <tr><th>Reason Group</th><th class="right">Leads</th><th class="right">MQL'd</th><th class="right">CVR</th><th>Type</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Open / In Progress</td><td class="right">365,710</td><td class="right">14,020</td><td class="right" style="color:var(--red)">3.8%</td><td><span class="badge badge-red">Pre-MQL</span></td></tr>
+        <tr><td>Did Not Respond</td><td class="right">33,775</td><td class="right">10,555</td><td class="right">31.3%</td><td><span class="badge badge-amber">Mixed</span></td></tr>
+        <tr><td>Unsubscribed</td><td class="right">27,074</td><td class="right">3,448</td><td class="right" style="color:var(--amber)">12.7%</td><td><span class="badge badge-red">Pre-MQL</span></td></tr>
+        <tr><td>Not Accepted (Bad Fit)</td><td class="right">6,528</td><td class="right">5,109</td><td class="right" style="color:var(--green)">78.3%</td><td><span class="badge badge-blue">Post-MQL</span></td></tr>
+        <tr><td>System Auto-Close</td><td class="right">3,658</td><td class="right">2,964</td><td class="right" style="color:var(--green)">81.0%</td><td><span class="badge badge-blue">Post-MQL</span></td></tr>
+        <tr><td>Not Interested</td><td class="right">952</td><td class="right">751</td><td class="right" style="color:var(--green)">78.9%</td><td><span class="badge badge-blue">Post-MQL</span></td></tr>
+        <tr><td>Previous Opportunity</td><td class="right">1,197</td><td class="right">736</td><td class="right">61.5%</td><td><span class="badge badge-blue">Post-MQL</span></td></tr>
+        <tr><td>Self Serve (Routed to SS)</td><td class="right">862</td><td class="right">637</td><td class="right" style="color:var(--green)">73.9%</td><td><span class="badge badge-purple">Routing</span></td></tr>
+        <tr><td>No Longer at Company</td><td class="right">568</td><td class="right">86</td><td class="right" style="color:var(--red)">15.1%</td><td><span class="badge badge-red">Pre-MQL</span></td></tr>
+        <tr><td>Data Quality (Dup/Cleanup)</td><td class="right">183</td><td class="right">156</td><td class="right" style="color:var(--green)">85.2%</td><td><span class="badge badge-amber">Data</span></td></tr>
+        <tr><td>Early Stage / Nurture</td><td class="right">40</td><td class="right">30</td><td class="right">75.0%</td><td><span class="badge badge-blue">Post-MQL</span></td></tr>
+      </tbody>
+    </table>
+    <div class="note">Pre-MQL = lead lost before MQL. Post-MQL = lead MQL'd then rejected/closed. High CVR = post-MQL issue. Low CVR = pre-MQL issue.</div>
+  </div>
+</div>
+
+<!-- SECTION 3: LEAD SOURCE + ICP -->
+<div class="section-title">3. Lead Source & ICP Conversion</div>
+<div class="grid-2">
+  <div class="card">
+    <h3><span class="icon">🎯</span> Lead Source Conversion Rates</h3>
+    <div class="chart-container-lg">
+      <canvas id="sourceChart"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <h3><span class="icon">🏢</span> ICP Impact on Lead → MQL Conversion</h3>
+    <div class="chart-container-sm">
+      <canvas id="icpChart"></canvas>
+    </div>
+    <div class="note" style="margin-top:16px;">
+      "No ICP" has the highest CVR (10.7%) because it includes Trial & Demo leads without account matching yet — they MQL on behavior, not firmographics.
+      ICP-matched leads include many outbound Sales leads with structurally low MQL rates.
+    </div>
+    <table style="margin-top:16px;">
+      <thead><tr><th>ICP</th><th class="right">Leads</th><th class="right">MQLs</th><th class="right">CVR</th><th class="right">DNR</th><th class="right">Unsub</th></tr></thead>
+      <tbody>
+        <tr><td>No ICP</td><td class="right">282,482</td><td class="right">30,315</td><td class="right" style="color:var(--green)">10.7%</td><td class="right">9,104</td><td class="right">17,378</td></tr>
+        <tr><td>Startup ICP</td><td class="right">25,064</td><td class="right">1,722</td><td class="right">6.9%</td><td class="right">384</td><td class="right">3,088</td></tr>
+        <tr><td>Upmarket ICP</td><td class="right">16,800</td><td class="right">1,046</td><td class="right">6.2%</td><td class="right">1,683</td><td class="right">295</td></tr>
+        <tr><td>Prime ICP</td><td class="right">116,200</td><td class="right">5,409</td><td class="right" style="color:var(--red)">4.7%</td><td class="right">10,062</td><td class="right">2,148</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- SECTION 4: AUTO-CLOSE DEEP DIVE -->
+<div class="section-title" style="color:var(--red)">4. System Auto-Close — $7.2M Lost Pipeline</div>
+<div class="callout amber">
+  <h4 style="color:var(--amber)">Demo & Trial MQLs Are Dying in Queue</h4>
+  <p>
+    <span class="stat">3,003 Demo MQLs</span> and <span class="stat">1,689 Trial MQLs</span> were auto-closed in the last 15 months.
+    Of those, <span class="stat">1,499 Demo</span> and <span class="stat">1,147 Trial</span> MQLs never even reached SAL — never touched by a rep.
+    Meanwhile, Livechat (<span class="stat">0.4%</span> auto-close) and Contact Sales (<span class="stat">2.1%</span>) have near-zero auto-close because they use real-time routing.
+    The fix: replicate Livechat's instant-assignment model for Demo & Trial form submissions.
+  </p>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h3><span class="icon">📉</span> Auto-Close Rate Trend (% of MQLs)</h3>
+    <div class="chart-container">
+      <canvas id="autoCloseTrendChart"></canvas>
+    </div>
+    <div class="note">Trending down from 16% to ~3%, but Feb 2026 spike (10.7%) coincided with volume surge</div>
+  </div>
+  <div class="card">
+    <h3><span class="icon">⚡</span> Auto-Close Rate by MQL Type</h3>
+    <div class="chart-container">
+      <canvas id="autoCloseTypeChart"></canvas>
+    </div>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h3><span class="icon">💰</span> ARR Impact: Auto-Closed vs Normally Worked MQLs</h3>
+    <table>
+      <thead><tr><th>MQL Type</th><th class="right">MQLs</th><th class="right">SAL Rate</th><th class="right">Never SAL'd</th><th class="right">S2 ARR</th><th class="right">$/MQL</th></tr></thead>
+      <tbody>
+        <tr style="border-bottom: 2px solid var(--border)">
+          <td colspan="6" style="color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:0.5px; padding-top:16px">Normally Worked MQLs</td>
+        </tr>
+        <tr><td>MQL-Demo</td><td class="right">2,870</td><td class="right" style="color:var(--green)">58.7%</td><td class="right">372</td><td class="right">$22.7M</td><td class="right" style="color:var(--green)">$7,907</td></tr>
+        <tr><td>MQL-Trial</td><td class="right">1,447</td><td class="right" style="color:var(--green)">55.2%</td><td class="right">173</td><td class="right">$6.3M</td><td class="right" style="color:var(--green)">$4,351</td></tr>
+        <tr><td>MQL-Nurture</td><td class="right">578</td><td class="right">29.4%</td><td class="right">73</td><td class="right">$831K</td><td class="right">$1,438</td></tr>
+
+        <tr style="border-bottom: 2px solid var(--border)">
+          <td colspan="6" style="color:var(--red); font-size:11px; text-transform:uppercase; letter-spacing:0.5px; padding-top:16px">Auto-Closed MQLs</td>
+        </tr>
+        <tr><td>MQL-Demo</td><td class="right">3,003</td><td class="right" style="color:var(--red)">35.0%</td><td class="right" style="color:var(--red)">1,499</td><td class="right">$18.2M</td><td class="right" style="color:var(--red)">$6,045</td></tr>
+        <tr><td>MQL-Trial</td><td class="right">1,689</td><td class="right" style="color:var(--red)">19.9%</td><td class="right" style="color:var(--red)">1,147</td><td class="right">$5.8M</td><td class="right" style="color:var(--red)">$3,423</td></tr>
+        <tr><td>MQL-Nurture</td><td class="right">431</td><td class="right" style="color:var(--red)">11.6%</td><td class="right" style="color:var(--red)">273</td><td class="right">$578K</td><td class="right" style="color:var(--red)">$1,341</td></tr>
+      </tbody>
+    </table>
+    <div class="note">$/MQL = S2 ARR generated per MQL. Gap × volume = estimated lost pipeline. Demo gap: $1,862/MQL × 3,003 = $5.6M. Trial: $928 × 1,689 = $1.6M.</div>
+  </div>
+  <div class="card">
+    <h3><span class="icon">🌍</span> Auto-Close by Region (Demo + Trial)</h3>
+    <div class="chart-container">
+      <canvas id="autoCloseRegionChart"></canvas>
+    </div>
+    <div class="note">LATAM has the worst auto-close rates (19–20%), suggesting a capacity or coverage gap</div>
+  </div>
+</div>
+
+<!-- SECTION 5: OTHER CHANNEL FLOODING -->
+<div class="section-title">5. "Other" Channel Flooding — Source of CVR Dilution</div>
+<div class="grid-2">
+  <div class="card">
+    <h3><span class="icon">🌊</span> "Unattributed" Lead Volume Trend</h3>
+    <div class="chart-container">
+      <canvas id="unattribTrendChart"></canvas>
+    </div>
+    <div class="note">Two spike periods: Aug 2025 (37K) and Feb–Mar 2026 (40K/mo). Driven by outbound Sales prospecting surges.</div>
+  </div>
+  <div class="card">
+    <h3><span class="icon">🔎</span> What's Inside "Other" Channel (FY27 Q1)</h3>
+    <div class="scrollable">
+      <table>
+        <thead><tr><th>Sub-Channel</th><th>Source</th><th class="right">Leads</th><th class="right">MQLs</th><th class="right">CVR</th></tr></thead>
+        <tbody>
+          <tr><td style="color:var(--red)"><strong>Unattributed</strong></td><td>Sales (Outbound)</td><td class="right"><strong>69,522</strong></td><td class="right">163</td><td class="right" style="color:var(--red)"><strong>0.2%</strong></td></tr>
+          <tr><td>Unattributed</td><td>Unknown</td><td class="right">7,071</td><td class="right">58</td><td class="right" style="color:var(--red)">0.8%</td></tr>
+          <tr><td>Unattributed</td><td>Trial</td><td class="right">5,804</td><td class="right">216</td><td class="right">3.7%</td></tr>
+          <tr><td>Unattributed</td><td>Event</td><td class="right">4,507</td><td class="right">63</td><td class="right">1.4%</td></tr>
+          <tr><td style="color:var(--red)">Unattributed</td><td>Event invites (various)</td><td class="right"><strong>~5,000+</strong></td><td class="right">0</td><td class="right" style="color:var(--red)"><strong>0.0%</strong></td></tr>
+          <tr><td>Content</td><td>Content Syndication</td><td class="right">2,437</td><td class="right">150</td><td class="right">6.2%</td></tr>
+          <tr><td>Event</td><td>Event</td><td class="right">2,056</td><td class="right">278</td><td class="right" style="color:var(--green)">13.5%</td></tr>
+          <tr><td>Referral</td><td>Trial</td><td class="right">1,507</td><td class="right">53</td><td class="right">3.5%</td></tr>
+          <tr><td>Unattributed</td><td>Demo</td><td class="right">1,356</td><td class="right">173</td><td class="right" style="color:var(--green)">12.8%</td></tr>
+          <tr><td>Unattributed</td><td>Webinar</td><td class="right">1,092</td><td class="right">8</td><td class="right" style="color:var(--red)">0.7%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note">69.5K outbound Sales leads with 0.2% CVR are 71% of "Other" volume. These aren't marketing failures — they're outbound leads mis-counted in the marketing funnel.</div>
+  </div>
+</div>
+
+<!-- SECTION 6: CAMPAIGN DQ -->
+<div class="section-title">6. Campaign-Level DQ Analysis</div>
+<div class="grid-2">
+  <div class="card">
+    <h3><span class="icon">📋</span> Highest DQ Rate Campaigns (SFDC, 30+ MQL members)</h3>
+    <div class="scrollable">
+      <table>
+        <thead><tr><th>Campaign</th><th>Type</th><th class="right">MQLs</th><th class="right">DQ'd</th><th class="right">DQ %</th><th class="right">No Outreach %</th></tr></thead>
+        <tbody>
+          <tr><td>CSPilotCSTToolkit_TechAdvice</td><td><span class="tag" style="background:rgba(239,68,68,0.15);color:var(--red)">Content Synd</span></td><td class="right">45</td><td class="right">33</td><td class="right" style="color:var(--red)"><strong>73.3%</strong></td><td class="right">8.9%</td></tr>
+          <tr><td>LinkedInBOFProsLAL_LeadGenForm</td><td><span class="tag" style="background:rgba(245,158,11,0.15);color:var(--amber)">Lead Gen</span></td><td class="right">40</td><td class="right">29</td><td class="right" style="color:var(--red)"><strong>72.5%</strong></td><td class="right">2.5%</td></tr>
+          <tr><td>CMPSeminarModernizingService</td><td><span class="tag" style="background:rgba(59,130,246,0.15);color:var(--blue)">Event 3P</span></td><td class="right">41</td><td class="right">29</td><td class="right" style="color:var(--red)"><strong>70.7%</strong></td><td class="right">4.9%</td></tr>
+          <tr><td>2025CustomerShowMelbourne</td><td><span class="tag" style="background:rgba(59,130,246,0.15);color:var(--blue)">Event 3P</span></td><td class="right">160</td><td class="right">110</td><td class="right" style="color:var(--red)"><strong>68.8%</strong></td><td class="right">14.4%</td></tr>
+          <tr><td>CSPilotSentimentReport_TechAdvice</td><td><span class="tag" style="background:rgba(239,68,68,0.15);color:var(--red)">Content Synd</span></td><td class="right">132</td><td class="right">90</td><td class="right" style="color:var(--red)"><strong>68.2%</strong></td><td class="right">14.4%</td></tr>
+          <tr><td>CSPilotCSTToolkit_Infuse</td><td><span class="tag" style="background:rgba(239,68,68,0.15);color:var(--red)">Content Synd</span></td><td class="right">197</td><td class="right">133</td><td class="right" style="color:var(--red)"><strong>67.5%</strong></td><td class="right">14.7%</td></tr>
+          <tr><td>ContactCenter_EMEA</td><td><span class="tag" style="background:rgba(59,130,246,0.15);color:var(--blue)">Event 3P</span></td><td class="right">52</td><td class="right">34</td><td class="right" style="color:var(--red)"><strong>65.4%</strong></td><td class="right">19.2%</td></tr>
+          <tr><td>CSPilotAnthropicWebinar_TechAdvice</td><td><span class="tag" style="background:rgba(239,68,68,0.15);color:var(--red)">Content Synd</span></td><td class="right">91</td><td class="right">58</td><td class="right" style="color:var(--red)"><strong>63.7%</strong></td><td class="right">16.5%</td></tr>
+          <tr><td>CSPilotSentimentReport_Infuse</td><td><span class="tag" style="background:rgba(239,68,68,0.15);color:var(--red)">Content Synd</span></td><td class="right">120</td><td class="right">76</td><td class="right" style="color:var(--red)"><strong>63.3%</strong></td><td class="right">14.2%</td></tr>
+          <tr><td>Demo - Fin Voice FV25</td><td><span class="tag" style="background:rgba(34,197,94,0.15);color:var(--green)">Demo</span></td><td class="right">78</td><td class="right">49</td><td class="right" style="color:var(--amber)"><strong>62.8%</strong></td><td class="right">9.0%</td></tr>
+          <tr><td>CCWVegas3rdPartyBoothScans</td><td><span class="tag" style="background:rgba(59,130,246,0.15);color:var(--blue)">Event 3P</span></td><td class="right">88</td><td class="right">54</td><td class="right" style="color:var(--amber)">61.4%</td><td class="right">13.6%</td></tr>
+          <tr><td>Building_frontier_AI_products</td><td><span class="tag" style="background:rgba(168,85,247,0.15);color:var(--purple)">Event Hosted</span></td><td class="right">112</td><td class="right">67</td><td class="right" style="color:var(--amber)">59.8%</td><td class="right" style="color:var(--red)"><strong>33.0%</strong></td></tr>
+          <tr><td>CSPilotSentimentWebinar_Infuse</td><td><span class="tag" style="background:rgba(239,68,68,0.15);color:var(--red)">Content Synd</span></td><td class="right">285</td><td class="right">168</td><td class="right" style="color:var(--amber)">58.9%</td><td class="right">14.7%</td></tr>
+          <tr><td>CSPilotAnthropicWebinar_Infuse</td><td><span class="tag" style="background:rgba(239,68,68,0.15);color:var(--red)">Content Synd</span></td><td class="right">210</td><td class="right">116</td><td class="right" style="color:var(--amber)">55.2%</td><td class="right">13.8%</td></tr>
+          <tr><td>CST25AnthropicWebinar</td><td><span class="tag" style="background:rgba(168,85,247,0.15);color:var(--purple)">Webinar</span></td><td class="right">129</td><td class="right">69</td><td class="right">53.5%</td><td class="right" style="color:var(--red)"><strong>31.0%</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card">
+    <h3><span class="icon">📊</span> DQ Rate by Campaign Type</h3>
+    <div class="chart-container">
+      <canvas id="campaignTypeDqChart"></canvas>
+    </div>
+    <div class="note" style="margin-top:16px;">
+      Content Syndication vendors (Infuse, TechAdvice) consistently produce 55–73% DQ rates. These leads MQL on scoring rules but fail sales acceptance criteria.
+      Third-party events have high DQ (50–69%) driven by badge-scan leads with low intent.
+    </div>
+  </div>
+</div>
+
+<!-- SECTION 7: FY27 Q1 CHANNEL × DQ -->
+<div class="section-title">7. FY27 Q1 Channel × DQ Matrix</div>
+<div class="card" style="margin-bottom:24px;">
+  <h3><span class="icon">🧮</span> Lead Volume & CVR by Channel × DQ Bucket (Feb–May 2026)</h3>
+  <div class="chart-container-lg">
+    <canvas id="channelDqMatrix"></canvas>
+  </div>
+</div>
+
+<!-- SECTION 8: HUMAN x INTERCOM CAMPAIGN DEEP DIVE -->
+<div class="section-title">8. Campaign Deep Dive — Human x Intercom (HumanX SF, Apr 6 2026)</div>
+
+<div class="callout blue" style="margin-bottom:16px;">
+  <h4 style="color:var(--blue)">Event - Third Party &middot; Tradeshow &middot; NAMER Field Marketing Q1</h4>
+  <p>
+    <span class="stat">474 members</span> &middot; 100% attendance &middot;
+    <span class="stat">140 MQLs</span> (29.5% MQL rate) &middot;
+    Avg <span class="stat">10 days</span> to MQL &middot;
+    <span class="stat">139 Non-Core</span> (MQL-Event) + 1 Core (MQL-Demo) &middot;
+    117 Prospect MQLs, 23 Customer MQLs &middot;
+    Campaign still within 30-day influence window (started Apr 6)
+  </p>
+</div>
+
+<!-- Row 1: THE KEY FINDING — High Intent vs Regular -->
+<div class="callout red" style="margin-bottom:16px;">
+  <h4 style="color:var(--red)">The #1 Discriminator: "Attended Booth - High Intent" Status</h4>
+  <p>
+    <span class="stat">99.3% of all MQLs</span> (139 of 140) came from members with <span class="stat">"Attended Booth - High Intent"</span> status.
+    Regular "Attended Booth" produced <span class="stat">1 MQL out of 232</span> (0.4% rate).
+    High Intent attendees convert at <span class="stat">57.4%</span> — regular booth visitors at 0.4%.
+    But <span class="stat">103 "High Intent" attendees still didn't MQL</span> — including Five9, GitHub, Chime, AppsFlyer, Customer.io, PagerDuty, and CoreWeave.
+    Multi-touch wasn't the differentiator: ~90% of both MQLs and non-MQLs had HumanX as their only campaign.
+  </p>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h3><span class="icon">🔬</span> HumanX — The "High Intent" Gate</h3>
+    <div class="chart-container">
+      <canvas id="humanxIntentChart"></canvas>
+    </div>
+    <div class="note">
+      "Attended Booth - High Intent" = 57.4% MQL rate (139 of 242). "Attended Booth" (regular) = 0.4% (1 of 232).
+      Booth engagement level is the single biggest predictor of MQL conversion at this event.
+    </div>
+  </div>
+  <div class="card">
+    <h3><span class="icon">🎯</span> HumanX — MQL Rate by ICP (Prospects)</h3>
+    <div class="chart-container">
+      <canvas id="humanxIcpChart"></canvas>
+    </div>
+    <div class="note">
+      125 members (26%) have blank ICP — all have a Lead ID but <strong>no Account ID</strong> (never matched via LeanData). Without an account: no ICP, no segment, no industry. These are badge scans from small/unknown companies that don't exist in the Salesforce account universe.
+    </div>
+  </div>
+</div>
+
+<!-- Row 1b: Funnel + 103 High Intent Non-MQLs -->
+<div class="grid-2">
+  <div class="card">
+    <h3><span class="icon">📊</span> HumanX — MQL Funnel Breakdown</h3>
+    <div class="chart-container">
+      <canvas id="humanxFunnelChart"></canvas>
+    </div>
+    <div class="note">
+      474 attendees → 140 MQLs → 118 qualified → 81 with outreach → 9 S1 influenced → 4 S2 influenced.
+      37 MQLs (26%) received no outreach within 7 days.
+    </div>
+  </div>
+  <div class="card">
+    <h3><span class="icon">🚩</span> HumanX — 103 "High Intent" Non-MQLs (Named Accounts)</h3>
+    <div class="scrollable" style="max-height:300px;">
+      <table>
+        <thead>
+          <tr><th>Account</th><th>ICP</th><th>Segment</th><th>Industry</th><th>Intent</th></tr>
+        </thead>
+        <tbody>
+          <tr style="color:var(--blue)"><td><strong>Five9</strong></td><td><span class="badge badge-purple">Upmarket</span></td><td>ENT</td><td>Software & Tech</td><td style="color:var(--green)">High Intent</td></tr>
+          <tr style="color:var(--blue)"><td><strong>GitHub</strong></td><td><span class="badge badge-purple">Upmarket</span></td><td>ENT</td><td>Software & Tech</td><td>Booth</td></tr>
+          <tr style="color:var(--blue)"><td><strong>Chime</strong> (3 leads)</td><td><span class="badge badge-purple">Upmarket</span></td><td>ENT</td><td>Fintech / FS</td><td>Booth</td></tr>
+          <tr style="color:var(--blue)"><td><strong>AppsFlyer</strong> (3 leads)</td><td><span class="badge badge-purple">Upmarket</span></td><td>ENT</td><td>Software & Tech</td><td>Booth</td></tr>
+          <tr><td><strong>Customer.io</strong> (5 leads)</td><td><span class="badge badge-blue">Prime</span></td><td>MM</td><td>Software & Tech</td><td>Mixed</td></tr>
+          <tr><td><strong>Bitdefender</strong> (6 leads)</td><td><span class="badge badge-blue">Prime</span></td><td>MM</td><td>Software & Tech</td><td>Booth</td></tr>
+          <tr><td><strong>PagerDuty</strong></td><td><span class="badge badge-blue">Prime</span></td><td>MM</td><td>Software & Tech</td><td>Booth</td></tr>
+          <tr><td><strong>CoreWeave</strong></td><td><span class="badge badge-blue">Prime</span></td><td>MM</td><td>Software & Tech</td><td>Booth</td></tr>
+          <tr><td><strong>Cockroach Labs</strong></td><td><span class="badge badge-blue">Prime</span></td><td>MM</td><td>Software & Tech</td><td>Booth</td></tr>
+          <tr><td><strong>DigiCert</strong></td><td><span class="badge badge-blue">Prime</span></td><td>MM</td><td>Software & Tech</td><td>Booth</td></tr>
+          <tr><td><strong>Cerebras</strong></td><td><span class="badge badge-blue">Prime</span></td><td>MM</td><td>Software & Tech</td><td>Booth</td></tr>
+          <tr><td><strong>NYSE</strong></td><td><span class="badge badge-blue">Prime</span></td><td>MM</td><td>Fintech / FS</td><td>Booth</td></tr>
+          <tr><td><strong>Ontario Teachers' Pension</strong></td><td><span class="badge badge-blue">Prime</span></td><td>MM</td><td>Fintech / FS</td><td>Booth</td></tr>
+          <tr><td><strong>Lucid Motors</strong></td><td><span class="badge badge-purple">Upmarket</span></td><td>ENT</td><td>Transportation</td><td>Booth</td></tr>
+          <tr><td><strong>OURA</strong></td><td><span class="badge badge-blue">Prime</span></td><td>MM</td><td>Healthcare</td><td>Booth</td></tr>
+          <tr><td><strong>ElevenLabs</strong></td><td><span class="badge badge-blue">Prime</span></td><td>SB</td><td>Software & Tech</td><td>Booth</td></tr>
+          <tr><td><strong>Forethought</strong></td><td><span class="badge badge-blue">Prime</span></td><td>SB</td><td>Software & Tech</td><td style="color:var(--green)">High Intent</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note">
+      These are ICP-matched accounts that attended HumanX but didn't MQL — many are "Attended Booth" (regular) which has a 0.4% MQL rate. Without a post-event nurture sequence to generate a second touchpoint, they'll sit in Open forever. Five9 and Forethought had "High Intent" engagement and still didn't convert.
+    </div>
+  </div>
+</div>
+
+<!-- Row 2: Routing + DQ Table -->
+<div class="grid-2">
+  <div class="card">
+    <h3><span class="icon">🚨</span> HumanX — Routing Performance (140 MQLs)</h3>
+    <table>
+      <thead>
+        <tr><th>Routed To</th><th class="right">MQLs</th><th class="right">Outreach</th><th class="right">No Outreach</th><th class="right">DQ'd</th><th class="right">Outreach %</th><th class="right">SLA Met</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>xDR</td><td class="right">91</td>
+          <td class="right" style="color:var(--green)">69</td>
+          <td class="right">5</td><td class="right">17</td>
+          <td class="right" style="color:var(--green)">75.8%</td>
+          <td class="right">57</td>
+        </tr>
+        <tr>
+          <td style="color:var(--red)">Other</td><td class="right">21</td>
+          <td class="right">7</td>
+          <td class="right" style="color:var(--red)"><strong>13</strong></td><td class="right">1</td>
+          <td class="right" style="color:var(--red)"><strong>33.3%</strong></td>
+          <td class="right">4</td>
+        </tr>
+        <tr>
+          <td style="color:var(--red)">RM</td><td class="right">18</td>
+          <td class="right">3</td>
+          <td class="right" style="color:var(--red)"><strong>15</strong></td><td class="right">0</td>
+          <td class="right" style="color:var(--red)"><strong>16.7%</strong></td>
+          <td class="right">3</td>
+        </tr>
+        <tr>
+          <td>AE</td><td class="right">10</td>
+          <td class="right">2</td>
+          <td class="right">4</td><td class="right">4</td>
+          <td class="right" style="color:var(--red)">20.0%</td>
+          <td class="right">2</td>
+        </tr>
+      </tbody>
+      <tfoot>
+        <tr style="border-top: 2px solid var(--border); font-weight:600;">
+          <td>Total</td><td class="right">140</td>
+          <td class="right">81</td><td class="right">37</td><td class="right">22</td>
+          <td class="right">57.9%</td>
+          <td class="right" style="color:var(--amber)">66 (56%)</td>
+        </tr>
+      </tfoot>
+    </table>
+    <div class="note">
+      RM routing is a black hole: 83% of RM-routed MQLs got no outreach. "Other" routing has 62% failure. xDR is the only functional path (76% outreach). SLA compliance: 56% overall.
+    </div>
+  </div>
+  <div class="card">
+    <h3><span class="icon">📋</span> HumanX — ICP × Prospect DQ Analysis</h3>
+    <table>
+      <thead>
+        <tr><th>ICP</th><th class="right">Members</th><th class="right">MQLs</th><th class="right">DQ'd</th><th class="right">DQ %</th><th class="right">Outreach</th><th class="right">No Outreach</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>No ICP</td><td class="right">157</td><td class="right">80</td><td class="right">9</td><td class="right">11.3%</td><td class="right" style="color:var(--green)">59</td><td class="right">12</td></tr>
+        <tr><td style="color:var(--red)">Prime ICP</td><td class="right">76</td><td class="right">31</td><td class="right" style="color:var(--red)"><strong>12</strong></td><td class="right" style="color:var(--red)"><strong>38.7%</strong></td><td class="right">12</td><td class="right">7</td></tr>
+        <tr><td>Startup ICP</td><td class="right">37</td><td class="right">6</td><td class="right">0</td><td class="right" style="color:var(--green)">0.0%</td><td class="right">6</td><td class="right">0</td></tr>
+        <tr><td>Upmarket ICP</td><td class="right">13</td><td class="right">2</td><td class="right">0</td><td class="right" style="color:var(--green)">0.0%</td><td class="right">1</td><td class="right">1</td></tr>
+        <tr><td style="color:var(--muted)">(blank)</td><td class="right">125</td><td class="right">2</td><td class="right">1</td><td class="right">50.0%</td><td class="right">0</td><td class="right">1</td></tr>
+      </tbody>
+      <tfoot>
+        <tr style="border-top: 2px solid var(--border);">
+          <td colspan="7" style="color:var(--muted); font-size:11px; padding-top:8px;">
+            <strong>Customer MQLs (separate):</strong> 20 Prime ICP Customers generated 10 MQLs — <span style="color:var(--red)">0 received outreach</span>. 38 No ICP Customers → 8 MQLs, 3 with outreach.
+          </td>
+        </tr>
+      </tfoot>
+    </table>
+    <div class="note">
+      Prime ICP leads DQ at 3.4x the rate of No ICP (38.7% vs 11.3%). These are known accounts being rejected — investigate if sales criteria mismatch with ICP definition. 10 Prime ICP customer MQLs sitting with zero outreach.
+    </div>
+  </div>
+</div>
+
+<!-- Row 3: Pipeline Impact + Non-MQL Opportunity -->
+<div class="grid-2">
+  <div class="card">
+    <h3><span class="icon">💰</span> HumanX — Pipeline Impact (W-Shaped Attribution)</h3>
+    <table>
+      <thead>
+        <tr><th>Stage</th><th class="right">Influenced Opps</th><th class="right">W-Shaped ARR</th><th class="right">Mktg W-Shaped ARR</th><th class="right">Total Impacted ARR</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>S1 Pipeline</td><td class="right">9</td><td class="right">$115.5K</td><td class="right">$156.5K</td><td class="right">$240.7K</td></tr>
+        <tr><td>S2 Pipeline</td><td class="right">4</td><td class="right" style="color:var(--blue)"><strong>$67.7K</strong></td><td class="right" style="color:var(--blue)"><strong>$72.3K</strong></td><td class="right">$151.5K</td></tr>
+        <tr><td>S3 Pipeline</td><td class="right">1</td><td class="right">$5.7K</td><td class="right">$10.2K</td><td class="right">$45.5K</td></tr>
+        <tr><td style="color:var(--green)">Won</td><td class="right">2</td><td class="right" style="color:var(--green)">$7.2K</td><td class="right" style="color:var(--green)">$12.0K</td><td class="right" style="color:var(--green)">$151.7K</td></tr>
+      </tbody>
+      <tfoot>
+        <tr style="border-top: 2px solid var(--border);">
+          <td colspan="5" style="font-size:12px; padding-top:10px;">
+            <strong>Efficiency:</strong> MQL-to-S2 CVR: <span style="color:var(--amber)">0.78%</span> &middot;
+            137 MQL marketing w-credits &middot;
+            S2 ACV: $37.9K &middot;
+            Expansion influenced: 6 S1, 4 S2
+          </td>
+        </tr>
+      </tfoot>
+    </table>
+    <div class="note">
+      Campaign is only 1 month old — pipeline still maturing. 4 S2 opps with $67.7K w-shaped ARR already.
+      Expansion influenced: 8 S1 ($65.9K), 6 S2 ($82.6K), 4 Won ($20.2K) — strong existing-business signal.
+    </div>
+  </div>
+  <div class="card">
+    <h3><span class="icon">🔍</span> HumanX — Why 125 Members Have Zero Data</h3>
+    <table style="margin-bottom:12px;">
+      <thead>
+        <tr><th>Field</th><th>Status</th><th>Root Cause</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Lead ID</td><td style="color:var(--green)">Present (all 125)</td><td>Badge scan created lead in SFDC</td></tr>
+        <tr><td style="color:var(--red)"><strong>Account ID</strong></td><td style="color:var(--red)"><strong>Missing (all 125)</strong></td><td style="color:var(--red)"><strong>Never matched by LeanData</strong></td></tr>
+        <tr><td>Contact ID</td><td style="color:var(--red)">Missing (all 125)</td><td>No contact conversion</td></tr>
+        <tr><td>ICP</td><td style="color:var(--red)">Blank</td><td>Derived from Account → no account = no ICP</td></tr>
+        <tr><td>Segment</td><td style="color:var(--red)">Blank</td><td>Derived from Account → no account = no segment</td></tr>
+        <tr><td>Industry</td><td style="color:var(--red)">Blank</td><td>Derived from Account → no account = no industry</td></tr>
+      </tbody>
+    </table>
+    <div class="note" style="margin-bottom:12px;">
+      All 125 are <strong>Leads without an Account match</strong>. Badge scans from the tradeshow created SFDC leads, but the companies don't exist in Salesforce's account universe — small AI startups, personal domains, agencies (cloneforge.io, traigent.ai, kaindly.ai, cascaderobotics.ai, etc.). Without an account, ICP/segment/industry can't be populated, and these leads are invisible to firmographic scoring. Only 2 of 125 MQL'd (1.6%).
+    </div>
+    <div class="note">
+      <strong>Fix:</strong> Enrich these 125 leads with Clay or similar tools to create/match accounts. Even if most are non-ICP, the enrichment makes them scorable — and a few could be legitimate prospects hiding behind unfamiliar domains.
+    </div>
+  </div>
+</div>
+
+<!-- HumanX Callouts -->
+<div class="grid-3" style="margin-top:16px;">
+  <div class="callout red">
+    <h4 style="color:var(--red)">Issue 1: 231 "Regular Booth" Leads Are Dead on Arrival</h4>
+    <p>
+      <span class="stat">231 attendees</span> with "Attended Booth" (non-High Intent) have a <span class="stat">0.4% MQL rate</span>.
+      Among them: Bitdefender (6 leads), Customer.io (some), Chime, AppsFlyer, GitHub, NYSE, PagerDuty — all ICP-matched accounts.
+      Without a post-event nurture to create a second touchpoint, these leads are permanently parked.
+      <strong>Recommendation:</strong> Auto-enroll all booth attendees into a 90-day post-event nurture sequence targeting a demo/trial CTA.
+    </p>
+  </div>
+  <div class="callout amber">
+    <h4 style="color:var(--amber)">Issue 2: 103 "High Intent" Attendees Still Didn't MQL</h4>
+    <p>
+      <span class="stat">103 "High Intent"</span> attendees failed to MQL despite strong engagement. Includes <span class="stat">Five9</span> and <span class="stat">Forethought</span> (High Intent), plus Customer.io (5 leads).
+      Possible causes: existing customer filtering, active opp exclusion, or MQL-Event scoring requiring additional criteria beyond "High Intent" status.
+      <strong>Recommendation:</strong> Audit the 103 to determine if they're blocked by a scoring rule vs a data issue. Even converting 10% = 10 incremental MQLs from qualified accounts.
+    </p>
+  </div>
+  <div class="callout blue">
+    <h4 style="color:var(--blue)">Issue 3: 125 Leads Have No Account = Invisible</h4>
+    <p>
+      <span class="stat">125 badge scans</span> (26% of members) have a Lead ID but <span class="stat">zero Account ID</span> — never matched by LeanData.
+      No account = no ICP, no segment, no industry, no scoring. These are small/unknown companies from the tradeshow floor.
+      <strong>Recommendation:</strong> Run Clay enrichment on the 125 to create/match accounts. Makes them scorable and routes them into ICP-based nurture paths.
+    </p>
+  </div>
+</div>
+
+<!-- SECTION 9: PRIORITY ACTIONS -->
+<div class="section-title">9. Priority Actions</div>
+<div class="grid-2">
+  <div class="callout blue">
+    <h4 style="color:var(--blue)">1. Fix the Metric: Exclude Non-Marketing Leads</h4>
+    <p>
+      Add filters to the lead-to-MQL metric: exclude <span class="stat">channel = 'Unattributed' AND first_person_source = 'Sales'</span>,
+      <span class="stat">first_person_source ILIKE 'Event invited%'</span>, and <span class="stat">first_person_source = 'Customer'</span>.
+      This removes ~76K leads/quarter that were never in the marketing funnel. Effort: low (filter change). Impact: accurate signal.
+    </p>
+  </div>
+  <div class="callout red">
+    <h4 style="color:var(--red)">2. Fix Demo/Trial Auto-Close Routing</h4>
+    <p>
+      <span class="stat">2,646 high-intent MQLs</span> (Demo + Trial) were never touched by a rep and auto-closed.
+      Estimated <span class="stat">$7.2M lost S2 pipeline</span>, ~<span class="stat">$1.8–2.2M lost bookings/yr</span>.
+      Replicate the Livechat/Contact Sales real-time routing model for form-based MQLs. LATAM needs priority capacity review (19–20% auto-close).
+    </p>
+  </div>
+  <div class="callout amber">
+    <h4 style="color:var(--amber)">3. Review Content Syndication Vendors</h4>
+    <p>
+      Infuse and TechAdvice campaigns produce <span class="stat">58–73% DQ rates</span>. These leads pass MQL scoring but fail sales acceptance — wasting SDR review time.
+      Options: raise scoring thresholds for content synd sources, add ICP pre-filters to vendor contracts, or reallocate spend to higher-quality channels.
+    </p>
+  </div>
+  <div class="callout amber">
+    <h4 style="color:var(--amber)">4. Investigate Marketing CVR Decline</h4>
+    <p>
+      Even after filtering, marketing-sourced CVR dropped from <span class="stat">~18%</span> to <span class="stat">~9%</span> in FY27 Q1.
+      Paid/Direct/Organic channels are stable at 11–16%. The gap is in "Other" (events, content, referrals) — needs upstream trace by program.
+    </p>
+  </div>
+</div>
+
+<div class="footer">
+  Lead → MQL Conversion & DQ Dashboard <strong>v1</strong> &middot; May 8, 2026
+  <br>Data: <strong>mart_sales_funnel_metrics_uncohorted_attributed</strong>, <strong>mart_sfdc_campaign_members</strong>, <strong>mart_sfdc_campaign_performance_unified</strong> in INTERCOM_PROD.CORE_GTM
+  <br>Marketing w-shaped attribution &middot; Non-customer, New Business, excl. Powered By
+  <br>Filters: metric = 'leads', is_customer_mql = FALSE, is_m2m = FALSE, channel_group != 'Powered By', attribution_model = 'Marketing w-shaped'
+  <br>HumanX campaign: 701Uk000017JLU5IAO &middot; Campaign members joined via mart_sfdc_campaign_members on SFDC_ID = LEAD_ID
+</div>
+
+<script>
+Chart.defaults.color = '#9ca3af';
+Chart.defaults.borderColor = 'rgba(42,45,58,0.5)';
+const months = ['Feb 25','Mar 25','Apr 25','May 25','Jun 25','Jul 25','Aug 25','Sep 25','Oct 25','Nov 25','Dec 25','Jan 26','Feb 26','Mar 26','Apr 26','May 26'];
+
+// 1. CVR TREND
+new Chart(document.getElementById('cvrTrendChart'), {
+  type: 'line',
+  data: {
+    labels: months,
+    datasets: [
+      { label: 'Marketing-Sourced CVR %', data: [18.2,19.9,13.0,20.1,16.3,16.9,19.7,14.4,17.4,20.0,14.8,13.5,7.2,10.8,9.5,7.1], borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.1)', fill: true, tension: 0.3, pointRadius: 4, borderWidth: 2.5 },
+      { label: 'Blended CVR %', data: [12.5,13.7,9.5,12.5,12.6,12.7,6.1,10.5,10.6,15.6,13.5,8.0,2.8,4.0,6.8,5.5], borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.05)', fill: true, tension: 0.3, pointRadius: 4, borderWidth: 2, borderDash: [5,3] }
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+    scales: {
+      y: { min: 0, max: 25, title: { display: true, text: 'CVR %' }, ticks: { callback: v => v + '%' } },
+      x: { ticks: { maxRotation: 45, font: { size: 10 } } }
+    }
+  }
+});
+
+// 2. VOLUME CHART
+const allLeads =  [20475,23426,26803,18753,20713,24089,48064,25400,31457,19468,16904,24457,50544,53533,30440,6020];
+const mktgLeads = [13741,15747,19349,11421,15687,17877,14292,18023,18080,14383,12158,13990,18281,18642,21268,4602];
+const excluded =  allLeads.map((a,i) => a - mktgLeads[i]);
+
+new Chart(document.getElementById('volumeChart'), {
+  type: 'bar',
+  data: {
+    labels: months,
+    datasets: [
+      { label: 'Marketing-Sourced', data: mktgLeads, backgroundColor: 'rgba(99,102,241,0.5)', borderRadius: 3 },
+      { label: 'Excluded (Outbound/Invites)', data: excluded, backgroundColor: 'rgba(156,163,175,0.2)', borderRadius: 3 }
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+    scales: {
+      x: { stacked: true, ticks: { maxRotation: 45, font: { size: 10 } } },
+      y: { stacked: true, title: { display: true, text: 'Lead Volume' } }
+    }
+  }
+});
+
+// 3. DQ REASON CHART
+new Chart(document.getElementById('dqReasonChart'), {
+  type: 'bar',
+  data: {
+    labels: ['Open / In Progress','Did Not Respond','Unsubscribed','Not Accepted','System Auto-Close','Previous Opp','Not Interested','Self Serve','No Longer at Co','Data Quality','Early Stage'],
+    datasets: [
+      { label: 'Converted to MQL', data: [14020,10555,3448,5109,2964,736,751,637,86,156,30], backgroundColor: 'rgba(34,197,94,0.5)', borderRadius: 3 },
+      { label: 'Did Not MQL', data: [348910,21233,22908,314,10,312,41,22,451,4,2], backgroundColor: 'rgba(239,68,68,0.4)', borderRadius: 3 }
+    ]
+  },
+  options: {
+    indexAxis: 'y',
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+    scales: {
+      x: { stacked: true, title: { display: true, text: 'Lead Count' } },
+      y: { stacked: true, ticks: { font: { size: 11 } } }
+    }
+  }
+});
+
+// 4. SOURCE CHART
+new Chart(document.getElementById('sourceChart'), {
+  type: 'bar',
+  data: {
+    labels: ['Intercom\n(Livechat)','Contact\nSales','Demo','Webinar','Content\nSynd','Trial','Event','Content','Sales\n(Outbound)'],
+    datasets: [
+      { label: 'CVR %', data: [73.2,55.1,30.3,12.3,9.8,7.7,6.6,1.6,0.5], backgroundColor: function(ctx) {
+          const v = ctx.parsed.y;
+          if (v >= 30) return 'rgba(34,197,94,0.6)';
+          if (v >= 10) return 'rgba(59,130,246,0.5)';
+          if (v >= 5) return 'rgba(245,158,11,0.5)';
+          return 'rgba(239,68,68,0.5)';
+        }, borderRadius: 6
+      }
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ctx.parsed.y + '% CVR' } } },
+    scales: {
+      y: { title: { display: true, text: 'Lead → MQL CVR %' }, ticks: { callback: v => v + '%' } },
+      x: { ticks: { font: { size: 10 }, maxRotation: 0 } }
+    }
+  }
+});
+
+// 5. ICP CHART
+new Chart(document.getElementById('icpChart'), {
+  type: 'bar',
+  data: {
+    labels: ['No ICP', 'Startup ICP', 'Upmarket ICP', 'Prime ICP'],
+    datasets: [
+      { label: 'Leads', data: [282482, 25064, 16800, 116200], backgroundColor: 'rgba(99,102,241,0.3)', yAxisID: 'y', borderRadius: 4 },
+      { type: 'line', label: 'CVR %', data: [10.7, 6.9, 6.2, 4.7], borderColor: '#f59e0b', pointBackgroundColor: '#f59e0b', yAxisID: 'y1', pointRadius: 6, borderWidth: 2.5 }
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+    scales: {
+      y: { position: 'left', title: { display: true, text: 'Lead Count' }, grid: { display: false } },
+      y1: { position: 'right', min: 0, max: 15, title: { display: true, text: 'CVR %' }, grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
+    }
+  }
+});
+
+// 6. AUTO-CLOSE TREND
+new Chart(document.getElementById('autoCloseTrendChart'), {
+  type: 'bar',
+  data: {
+    labels: months,
+    datasets: [
+      { type: 'bar', label: 'MQLs Auto-Closed', data: [414,295,226,227,218,257,202,196,262,134,105,133,149,82,64,0], backgroundColor: 'rgba(239,68,68,0.4)', yAxisID: 'y', borderRadius: 3 },
+      { type: 'line', label: 'Auto-Close % of MQLs', data: [16.1,9.2,8.9,9.7,8.4,8.4,6.9,7.3,7.8,4.4,4.6,6.8,10.7,3.8,3.1,0], borderColor: '#ef4444', yAxisID: 'y1', tension: 0.3, pointRadius: 4, borderWidth: 2.5 }
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+    scales: {
+      y: { position: 'left', title: { display: true, text: 'Count' }, grid: { display: false } },
+      y1: { position: 'right', min: 0, max: 20, title: { display: true, text: '% of MQLs' }, grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } },
+      x: { ticks: { maxRotation: 45, font: { size: 10 } } }
+    }
+  }
+});
+
+// 7. AUTO-CLOSE BY TYPE
+new Chart(document.getElementById('autoCloseTypeChart'), {
+  type: 'bar',
+  data: {
+    labels: ['MQL-Nurture','MQL-Trial','MQL-Demo','MQL-Contact Sales','MQL-Livechat','MQL-Event'],
+    datasets: [{
+      label: 'Auto-Close Rate %',
+      data: [18.2, 17.8, 15.8, 2.1, 1.4, 0.2],
+      backgroundColor: function(ctx) {
+        const v = ctx.parsed.y;
+        if (v >= 15) return 'rgba(239,68,68,0.6)';
+        if (v >= 5) return 'rgba(245,158,11,0.5)';
+        return 'rgba(34,197,94,0.5)';
+      },
+      borderRadius: 6
+    }]
+  },
+  options: {
+    indexAxis: 'y',
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ctx.parsed.x + '% auto-closed' } } },
+    scales: {
+      x: { title: { display: true, text: 'Auto-Close Rate %' }, ticks: { callback: v => v + '%' } },
+      y: { ticks: { font: { size: 11 } } }
+    }
+  }
+});
+
+// 8. AUTO-CLOSE BY REGION
+new Chart(document.getElementById('autoCloseRegionChart'), {
+  type: 'bar',
+  data: {
+    labels: ['NAMER', 'EMEA', 'APAC', 'LATAM'],
+    datasets: [
+      { label: 'Demo Auto-Close %', data: [14.5, 13.7, 15.5, 19.6], backgroundColor: 'rgba(99,102,241,0.5)', borderRadius: 4 },
+      { label: 'Trial Auto-Close %', data: [17.4, 16.9, 16.3, 19.1], backgroundColor: 'rgba(236,72,153,0.5)', borderRadius: 4 }
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+    scales: {
+      y: { min: 0, max: 25, title: { display: true, text: 'Auto-Close Rate %' }, ticks: { callback: v => v + '%' } },
+      x: { grid: { display: false } }
+    }
+  }
+});
+
+// 9. UNATTRIBUTED TREND
+new Chart(document.getElementById('unattribTrendChart'), {
+  type: 'bar',
+  data: {
+    labels: ['May 25','Jun 25','Jul 25','Aug 25','Sep 25','Oct 25','Nov 25','Dec 25','Jan 26','Feb 26','Mar 26','Apr 26','May 26'],
+    datasets: [
+      { type: 'bar', label: 'Unattributed Leads', data: [9604,8591,9218,37352,12707,17065,8279,6389,13937,40548,39218,16183,2416], backgroundColor: function(ctx) {
+          return ctx.parsed.y > 30000 ? 'rgba(239,68,68,0.5)' : 'rgba(156,163,175,0.3)';
+        }, borderRadius: 3
+      },
+      { type: 'line', label: 'CVR %', data: [4.7,7.1,6.5,1.8,5.2,4.0,6.3,5.3,2.6,0.7,0.9,1.7,1.6], borderColor: '#f59e0b', yAxisID: 'y1', tension: 0.3, pointRadius: 4, borderWidth: 2.5 }
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+    scales: {
+      y: { position: 'left', title: { display: true, text: 'Lead Volume' }, grid: { display: false } },
+      y1: { position: 'right', min: 0, max: 10, title: { display: true, text: 'CVR %' }, grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } },
+      x: { ticks: { maxRotation: 45, font: { size: 10 } } }
+    }
+  }
+});
+
+// 10. HUMANX HIGH INTENT vs REGULAR
+new Chart(document.getElementById('humanxIntentChart'), {
+  type: 'bar',
+  data: {
+    labels: ['Attended Booth -\nHigh Intent', 'Attended Booth\n(Regular)'],
+    datasets: [
+      { label: 'MQL\'d', data: [139, 1], backgroundColor: 'rgba(34,197,94,0.6)', borderRadius: 6 },
+      { label: 'Did Not MQL', data: [103, 231], backgroundColor: 'rgba(239,68,68,0.3)', borderRadius: 6 }
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: {
+      legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
+      tooltip: { callbacks: {
+        afterBody: function(ctx) {
+          if (ctx[0].dataIndex === 0) return '57.4% MQL rate';
+          return '0.4% MQL rate';
+        }
+      }}
+    },
+    scales: {
+      x: { stacked: true, ticks: { font: { size: 11 }, maxRotation: 0 } },
+      y: { stacked: true, title: { display: true, text: 'Attendees' } }
+    }
+  }
+});
+
+// 10b. HUMANX FUNNEL
+new Chart(document.getElementById('humanxFunnelChart'), {
+  type: 'bar',
+  data: {
+    labels: ['Attendees', 'MQLs', 'Qualified\n(non-DQ)', 'Outreach\nReceived', 'S1\nInfluenced', 'S2\nInfluenced', 'Won'],
+    datasets: [{
+      label: 'Count',
+      data: [474, 140, 118, 81, 9, 4, 2],
+      backgroundColor: ['rgba(59,130,246,0.5)', 'rgba(99,102,241,0.5)', 'rgba(34,197,94,0.5)', 'rgba(34,197,94,0.4)', 'rgba(245,158,11,0.5)', 'rgba(245,158,11,0.4)', 'rgba(34,197,94,0.6)'],
+      borderRadius: 6
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: {
+        label: function(ctx) {
+          const rates = ['100%', '29.5%', '84.3%', '68.6%', '6.4%', '2.9%', '1.4%'];
+          return ctx.parsed.y + ' (' + rates[ctx.dataIndex] + ' of previous)';
+        }
+      }}
+    },
+    scales: {
+      y: { title: { display: true, text: 'Count' } },
+      x: { ticks: { font: { size: 10 }, maxRotation: 0 } }
+    }
+  }
+});
+
+// 11. HUMANX ICP CHART
+new Chart(document.getElementById('humanxIcpChart'), {
+  type: 'bar',
+  data: {
+    labels: ['No ICP\n(157)', 'Prime ICP\n(76)', 'Startup ICP\n(37)', 'Upmarket ICP\n(13)', '(blank)\n(125)'],
+    datasets: [
+      { label: 'MQL Rate %', data: [51.0, 40.8, 16.2, 15.4, 1.6], backgroundColor: ['rgba(34,197,94,0.5)', 'rgba(59,130,246,0.5)', 'rgba(245,158,11,0.5)', 'rgba(245,158,11,0.5)', 'rgba(156,163,175,0.3)'], borderRadius: 6 },
+      { label: 'DQ Rate %', data: [11.3, 38.7, 0, 0, 50.0], backgroundColor: 'rgba(239,68,68,0.4)', borderRadius: 6 }
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+    scales: {
+      y: { min: 0, max: 60, title: { display: true, text: 'Rate %' }, ticks: { callback: v => v + '%' } },
+      x: { ticks: { font: { size: 10 }, maxRotation: 0 } }
+    }
+  }
+});
+
+// 12. CAMPAIGN TYPE DQ
+new Chart(document.getElementById('campaignTypeDqChart'), {
+  type: 'bar',
+  data: {
+    labels: ['Content Synd\n(TechAdvice)','Content Synd\n(Infuse)','Event\n3rd Party','Event\nHosted','Webinar','Lead Gen\nForm','Demo'],
+    datasets: [
+      { label: 'DQ Rate %', data: [68.4, 61.0, 62.7, 53.1, 48.3, 72.5, 62.8], backgroundColor: function(ctx) {
+          const v = ctx.parsed.y;
+          if (v >= 65) return 'rgba(239,68,68,0.6)';
+          if (v >= 50) return 'rgba(245,158,11,0.5)';
+          return 'rgba(59,130,246,0.5)';
+        }, borderRadius: 6
+      },
+      { label: 'No Outreach %', data: [13.5, 14.4, 16.8, 30.3, 33.6, 2.5, 9.0], backgroundColor: 'rgba(168,85,247,0.4)', borderRadius: 6 }
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+    scales: {
+      y: { min: 0, max: 80, title: { display: true, text: 'Rate %' }, ticks: { callback: v => v + '%' } },
+      x: { ticks: { font: { size: 10 }, maxRotation: 0 } }
+    }
+  }
+});
+
+// 11. CHANNEL × DQ MATRIX
+new Chart(document.getElementById('channelDqMatrix'), {
+  type: 'bar',
+  data: {
+    labels: ['Direct', 'Organic', 'Paid', 'Other'],
+    datasets: [
+      { label: 'Open / No Close Reason', data: [6652, 7123, 13673, 103171], backgroundColor: 'rgba(156,163,175,0.3)', borderRadius: 3 },
+      { label: 'Not Worked / Auto-Closed', data: [541, 477, 1190, 3372], backgroundColor: 'rgba(239,68,68,0.4)', borderRadius: 3 },
+      { label: 'Opted Out / Not Interested', data: [586, 573, 1092, 1679], backgroundColor: 'rgba(245,158,11,0.4)', borderRadius: 3 },
+      { label: 'Routing / Duplicate', data: [71, 72, 172, 83], backgroundColor: 'rgba(99,102,241,0.4)', borderRadius: 3 }
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: {
+      legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
+      tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y.toLocaleString() + ' leads' } }
+    },
+    scales: {
+      x: { stacked: true, grid: { display: false } },
+      y: { stacked: true, title: { display: true, text: 'Lead Count (FY27 Q1)' } }
+    }
+  }
+});
+</script>
+</body>
+</html>
